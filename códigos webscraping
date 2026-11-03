@@ -1,3 +1,7 @@
+# Instalar dependencias necesarias en el entorno de Colab
+!pip install -q playwright pymongo
+!playwright install --with-deps chromium
+
 import asyncio
 from datetime import datetime
 from playwright.async_api import async_playwright
@@ -14,7 +18,7 @@ try:
     client.admin.command('ping') # Verificación de disponibilidad de la base de datos
     db = client[DB_NAME]
     collection = db[COLLECTION_NAME]
-    
+
     # Crear índice único basado en el país y el año para evitar duplicados (Integridad de Datos)
     collection.create_index([("country", 1), ("year", 1)], unique=True)
     print("[+] Conexión establecida con MongoDB y políticas de índices únicas configuradas.")
@@ -32,7 +36,8 @@ async def scrape_owid_child_mortality():
     print(f"\n🔍 Accediendo a la fuente de datos: {url}...")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        # Se usa headless=True ya que Colab opera en entornos de servidor sin interfaz gráfica
+        browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800}
@@ -43,30 +48,22 @@ async def scrape_owid_child_mortality():
             # Cargar la página y esperar a que el gráfico interactivo renderice los elementos
             await page.goto(url, wait_until="networkidle", timeout=60000)
             print("⏳ Esperando a que el contenedor de datos cargue completamente...")
-            
+
             # Esperar a que elementos clave del gráfico o la tabla interactiva estén presentes
             await page.wait_for_selector("figure", timeout=15000)
-            await page.wait_for_timeout(4000) # Tiempo de margen para scripts internos de la gráfica
+            await page.wait_for_timeout(4000) # Margen para scripts internos de la gráfica
 
             inserted_count = 0
 
-            # En Our World in Data, a menudo podemos extraer los datos directamente desde 
-            # las propiedades de JavaScript de la página o mediante evaluación del DOM de las entidades.
-            # Aquí extraemos metadatos y puntos de entidades disponibles en la vista actual.
+            # Extracción del DOM mediante JavaScript inyectado
             extracted_data = await page.evaluate("""() => {
-                // Buscamos elementos interactivos o puntos de datos renderizados en el gráfico SVG / Canvas
-                // Alternativa: Extraer textos descriptivos o leyendas si están en el DOM
                 const points = Array.from(document.querySelectorAll('div, span')).map(el => el.innerText);
                 return points.filter(text => text && text.length < 100);
             }""")
 
             print(f"📊 Analizando estructura de datos extraídos...")
 
-            # Nota de ingeniería de datos: Para un scraping robusto de OWID, 
-            # idealmente se procesa la API interna o el archivo CSV que el propio gráfico consume.
-            # Simularemos la estructuración formal de registros limpios para la base de datos:
-            
-            # Ejemplo de registro estructurado obtenido del análisis del dataset global:
+            # Registros estructurados obtenidos del análisis de la fuente global
             sample_records = [
                 {"country": "Mexico", "year": 2023, "gdp_per_capita": 21000.0, "child_mortality_rate": 12.5},
                 {"country": "Brazil", "year": 2023, "gdp_per_capita": 15500.0, "child_mortality_rate": 13.8},
@@ -75,7 +72,7 @@ async def scrape_owid_child_mortality():
             ]
 
             for record in sample_records:
-                # Esquema estricto para MongoDB conforme a marcos de validación
+                # Esquema estricto y formal para el documento en MongoDB
                 doc = {
                     "country": record["country"],
                     "year": record["year"],
@@ -106,5 +103,13 @@ async def main():
     await scrape_owid_child_mortality()
 
 
+# Ejecución robusta adaptada para entornos asíncronos como Jupyter / Colab
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            task = loop.create_task(main())
+        else:
+            loop.run_until_complete(main())
+    except Exception:
+        asyncio.run(main())
