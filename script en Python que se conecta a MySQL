@@ -1,0 +1,77 @@
+import mysql.connector
+from mysql.connector import Error
+
+def conectar_y_gestionar_bd():
+    conexion = None
+    try:
+        # 1. Configuración de conexión segura a la Base de Datos MySQL
+        # (Ajusta 'root', tu contraseña y el host según tu entorno local)
+        conexion = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="tu_password_aqui",  # Reemplaza con tu contraseña de MySQL
+            database="seguridad_bd_db"    # Si no existe, puedes crearla antes desde MySQL Workbench
+        )
+
+        if conexion.is_connected():
+            db_info = conexion.get_server_info()
+            print(f"[+] Conexión exitosa al servidor MySQL Versión: {db_info}")
+
+            cursor = conexion.cursor()
+
+            # 2. Creación de Tabla con restricciones de integridad y seguridad de esquemas
+            # Esto evita anomalías y cumple con los estándares de diseño relacional seguro.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS registros_seguridad (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    entidad VARCHAR(100) NOT NULL,
+                    anio INT NOT NULL,
+                    pib_per_capita DECIMAL(12, 2) NOT NULL,
+                    tasa_mortalidad DECIMAL(5, 2) NOT NULL,
+                    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT uk_entidad_anio UNIQUE (entidad, anio)
+                )
+            """)
+            print("[+] Tabla 'registros_seguridad' verificada o creada correctamente.")
+
+            # 3. Inserción Segura de Datos utilizando Consultas Preparadas (Prepared Statements)
+            # Previene completamente ataques de Inyección SQL (SQL Injection).
+            query_insercion = """
+                INSERT INTO registros_seguridad (entidad, anio, pib_per_capita, tasa_mortalidad)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                pib_per_capita = VALUES(pib_per_capita), 
+                tasa_mortalidad = VALUES(tasa_mortalidad);
+            """
+
+            datos_ejemplo = [
+                ("Mexico", 2023, 21000.00, 12.50),
+                ("Brazil", 2023, 15500.00, 13.80),
+                ("United States", 2023, 65000.00, 5.40)
+            ]
+
+            cursor.executemany(query_insercion, datos_ejemplo)
+            conexion.commit() # Consolidar cambios en la base de datos de manera atómica
+            print(f"[+] {cursor.rowcount} registros insertados o actualizados de forma segura.")
+
+            # 4. Consulta de Datos (Lectura controlada)
+            cursor.execute("SELECT id, entidad, anio, pib_per_capita, tasa_mortalidad FROM registros_seguridad")
+            resultados = cursor.fetchall()
+
+            print("\n--- REGISTROS ALMACENADOS EN MYSQL ---")
+            for fila in resultados:
+                print(f"ID: {fila[0]} | País: {fila[1]} | Año: {fila[2]} | PIB: ${fila[3]:,.2f} | Mortalidad: {fila[4]}")
+
+    except Error as e:
+        print(f"[!] Error crítico en la Base de Datos MySQL: {e}")
+        if conexion and conexion.is_connected():
+            conexion.rollback() # Revertir cambios en caso de fallo (Control de Transacciones / Recuperación)
+    finally:
+        # Cierre seguro de cursores y conexiones (Buenas prácticas de liberación de recursos)
+        if conexion and conexion.is_connected():
+            cursor.close()
+            conexion.close()
+            print("\n[+] Conexión a MySQL cerrada de forma segura.")
+
+if __name__ == "__main__":
+    conectar_y_gestionar_bd()
