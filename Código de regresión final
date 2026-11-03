@@ -1,10 +1,12 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
 from google.colab import files
 import io
 
-print("Por favor, sube tu archivo (CSV o Excel) usando el botón de abajo:")
+print("--- MÓDULO DE REGRESIÓN LINEAL (MORTALIDAD VS PIB) ---")
+print("Por favor, sube tu archivo CSV ('child-mortality-gdp-per-capita.csv'):")
 uploaded = files.upload()
 
 # Verificar que se haya subido un archivo
@@ -13,7 +15,7 @@ if len(uploaded) == 0:
 else:
     # Obtener el nombre del primer archivo subido
     nombre_archivo = list(uploaded.keys())[0]
-    print(f"\nArchivo cargado exitosamente: {nombre_archivo}")
+    print(f"\n[+] Archivo cargado exitosamente: {nombre_archivo}")
 
     # Cargar el archivo según su extensión
     try:
@@ -24,48 +26,65 @@ else:
         else:
             raise ValueError("Formato no soportado. Sube un archivo CSV o Excel.")
 
-        # Mostrar columnas disponibles
-        print("\nEstas son las columnas detectadas en tu archivo:")
+        # Mostrar columnas disponibles de ayuda para el usuario
+        print("\nColumnas detectadas en tu archivo:")
         for col in df.columns:
             print(f" - {col}")
 
-        print("\nEscribe exactamente el nombre de las columnas (respeta mayúsculas y espacios).")
-        col_x = input("Columna INDEPENDIENTE (X, ej. PIB): ")
-        col_y = input("Columna DEPENDIENTE (Y, ej. Mortalidad): ")
+        print("\nSugerencia de columnas para este análisis:")
+        print(" -> Independiente (X): GDP per capita (int-$)")
+        print(" -> Dependiente (Y): Child mortality rate\n")
+
+        # Solicitar columnas al usuario
+        col_x = input("Columna INDEPENDIENTE (X): ").strip()
+        col_y = input("Columna DEPENDIENTE (Y): ").strip()
 
         # Validar y procesar
         if col_x not in df.columns or col_y not in df.columns:
-            print("\nError: Alguna de las columnas no existe en el archivo. Revisa la ortografía.")
+            print("\n[!] Error: Alguna de las columnas no existe en el archivo. Revisa mayúsculas y espacios.")
         else:
-            # Limpiar datos vacíos (NaN)
+            # Limpiar datos vacíos (NaN) y asegurar tipado numérico
+            df = df.dropna(subset=[col_x, col_y])
+            df[col_x] = pd.to_numeric(df[col_x], errors='coerce')
+            df[col_y] = pd.to_numeric(df[col_y], errors='coerce')
             df = df.dropna(subset=[col_x, col_y])
 
             # Preparar variables
             X = df[[col_x]]
             y = df[col_y]
 
-            # Entrenar modelo
+            # Entrenar modelo de regresión lineal
             modelo = LinearRegression()
             modelo.fit(X, y)
             predicciones = modelo.predict(X)
 
-            # Graficar
-            plt.figure(figsize=(10, 6))
-            plt.scatter(X, y, color='blue', alpha=0.6, label='Datos reales')
-            plt.plot(X, predicciones, color='red', linewidth=2, label='Línea de Regresión')
+            # Calcular métrica R2
+            r2 = r2_score(y, predicciones)
 
-            plt.title(f'Regresión Lineal: {col_x} vs {col_y}', fontsize=14)
+            # Graficar resultados
+            plt.figure(figsize=(10, 6))
+            plt.scatter(X, y, color='#4c1d95', alpha=0.5, label='Datos reales')
+            plt.plot(X, predicciones, color='red', linewidth=2, label=f'Línea de Regresión ($R^2 = {r2:.4f}$)')
+
+            plt.title(f'Regresión Lineal: {col_x} vs {col_y}', fontsize=14, fontweight='bold')
             plt.xlabel(col_x, fontsize=12)
             plt.ylabel(col_y, fontsize=12)
-            plt.legend()
+            plt.legend(loc='upper right')
             plt.grid(True, linestyle='--', alpha=0.5)
+
+            # Guardar la gráfica en el entorno de forma segura
+            nombre_imagen = 'reporte_regresion_owid.png'
+            plt.savefig(nombre_imagen, dpi=300, bbox_inches='tight')
+            print(f"\n[+] Gráfico guardado exitosamente como '{nombre_imagen}'.")
 
             plt.show()
 
-            # Mostrar métricas
-            print("\n--- Resultados del Modelo ---")
+            # Mostrar métricas evaluativas del modelo
+            print("\n--- Resultados del Modelo Estadístico ---")
+            print(f"Ecuación: Y = {modelo.coef_[0]:.5f}X + {modelo.intercept_:.4f}")
+            print(f"Pendiente (m): {modelo.coef_[0]:.5f}")
             print(f"Intersección (b): {modelo.intercept_:.4f}")
-            print(f"Pendiente (m): {modelo.coef_[0]:.4f}")
+            print(f"Coeficiente de Determinación (R2): {r2:.4f}")
 
     except Exception as e:
-        print(f"\nOcurrió un error al procesar el archivo: {e}")
+        print(f"\n[!] Ocurrió un error al procesar el archivo: {e}")
