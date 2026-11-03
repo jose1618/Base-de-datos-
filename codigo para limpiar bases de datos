@@ -6,15 +6,15 @@ from sklearn.linear_model import LinearRegression
 from google.colab import files
 import io
 
-print("--- MÓDULO DE LIMPIEZA Y SEGURIDAD DE DATOS (INEGI) ---")
-print("Por favor, sube tu archivo CSV con los registros de datos...")
+print("--- MÓDULO DE LIMPIEZA Y SEGURIDAD DE DATOS (OUR WORLD IN DATA) ---")
+print("Por favor, sube tu archivo CSV ('child-mortality-gdp-per-capita.csv')...")
 
 uploaded = files.upload()
 
 if not uploaded:
     print("Error crítico: No se seleccionó ningún archivo para procesar.")
 else:
-    # Obtener el nombre del archivo cargado
+    # Obtener el nombre del archivo cargado dinámicamente
     for filename in uploaded.keys():
         ruta_archivo = filename
         print(f"Archivo '{filename}' recibido exitosamente en el entorno seguro.")
@@ -26,91 +26,87 @@ else:
 
     # ==========================================
     # 2. PROCESO DE LIMPIEZA DE DATOS (Data Hygiene & Integrity)
-    # Aplicando controles de calidad para cumplir con normativas de integridad de bases de datos
+    # Aplicando controles de calidad para cumplir con normativas de seguridad e integridad en bases de datos
     # ==========================================
     
     # A. Eliminar registros duplicados (evita redundancia y anomalías de almacenamiento)
     df_clean = df_raw.drop_duplicates()
     
-    # B. Manejo de valores nulos o faltantes en columnas críticas ('clave_mun', 'municipio')
-    # En seguridad de bases de datos, los nulos imprevistos pueden corromper modelos o consultas
-    columnas_criticas = ['clave_mun', 'municipio']
+    # B. Manejo de valores nulos o faltantes en columnas críticas de análisis
+    # Columnas objetivo: 'Entity', 'Year', 'Child mortality rate', 'GDP per capita (int-$)'
+    columnas_criticas = ['Entity', 'Year', 'Child mortality rate', 'GDP per capita (int-$)']
     df_clean = df_clean.dropna(subset=columnas_criticas)
     
-    # C. Saneamiento de cadenas de texto (Limpieza de espacios en blanco en nombres de municipios)
-    df_clean['municipio'] = df_clean['municipio'].astype(str).str.strip().str.title()
+    # C. Saneamiento de cadenas de texto (Limpieza de espacios en blanco en los nombres de los países/entidades)
+    df_clean['Entity'] = df_clean['Entity'].astype(str).str.strip().str.title()
     
     # D. Asegurar tipado correcto de datos (Integridad de esquema)
-    df_clean['clave_mun'] = pd.to_numeric(df_clean['clave_mun'], errors='coerce')
-    df_clean = df_clean.dropna(subset=['clave_mun']) # Remover si quedaron nulos tras la conversión
-    df_clean['clave_mun'] = df_clean['clave_mun'].astype(int)
+    df_clean['Year'] = pd.to_numeric(df_clean['Year'], errors='coerce')
+    df_clean['Child mortality rate'] = pd.to_numeric(df_clean['Child mortality rate'], errors='coerce')
+    df_clean['GDP per capita (int-$)'] = pd.to_numeric(df_clean['GDP per capita (int-$)'], errors='coerce')
+    
+    # Remover posibles nulos remanentes tras la conversión de tipos
+    df_clean = df_clean.dropna(subset=['Year', 'Child mortality rate', 'GDP per capita (int-$)'])
+    df_clean['Year'] = df_clean['Year'].astype(int)
 
     print(f"Registros limpios y validados después del filtrado: {len(df_clean)}")
 
-    # 3. Agrupación y Transformación de Datos para el Análisis
-    df_frecuencia = df_clean.groupby(['clave_mun', 'municipio']).size().reset_index(name='total_delitos')
+    # Filtrar por un año reciente específico o datos globales representativos (ej. Año 2022 o el más reciente por país)
+    # Tomaremos el registro más reciente por cada país para hacer un análisis transversal limpio
+    df_recent = df_clean.sort_values('Year').groupby('Entity').tail(1)
 
-    X = df_frecuencia[['clave_mun']]
-    y = df_frecuencia['total_delitos']
+    # Variables para el modelo (X = PIB per cápita, y = Tasa de mortalidad infantil)
+    X = df_recent[['GDP per capita (int-$)']]
+    y = df_recent['Child mortality rate']
 
-    # 4. Modelo de Regresión Lineal (Análisis predictivo / estadístico)
+    # 3. Modelo de Regresión Lineal (Análisis predictivo / estadístico)
     modelo = LinearRegression()
     modelo.fit(X, y)
-    r2_score = modelo.score(X, y)
+    y_pred = modelo.predict(X)
+    r2_score_val = modelo.score(X, y)
 
-    # 5. Configuración y Generación de Visualizaciones
+    # 4. Configuración y Generación de Visualizaciones
     sns.set_theme(style="whitegrid")
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
-    # --- GRÁFICO 1: Regresión Lineal Simple ---
+    # --- GRÁFICO 1: Regresión Lineal Simple (PIB vs Mortalidad Infantil) ---
     sns.regplot(
-        data=df_frecuencia,
-        x='clave_mun',
-        y='total_delitos',
+        data=df_recent,
+        x='GDP per capita (int-$)',
+        y='Child mortality rate',
         ax=axes[0],
-        color='#4c1d95', # Tono morado acorde al proyecto
-        line_kws={'color': 'red', 'linewidth': 2, 'label': f'Línea de Tendencia ($R^2={r2_score:.4f}$)'},
-        scatter_kws={'s': 80, 'alpha': 0.8}
+        color='#4c1d95', # Tono morado institucional
+        line_kws={'color': 'red', 'linewidth': 2, 'label': f'Línea de Tendencia ($R^2={r2_score_val:.4f}$)'},
+        scatter_kws={'s': 60, 'alpha': 0.7}
     )
-    axes[0].set_title('Regresión Lineal: Clave Municipal vs Incidencia Delictiva', fontsize=12, fontweight='bold')
-    axes[0].set_xlabel('Clave de Municipio (Variable X)', fontsize=10)
-    axes[0].set_ylabel('Total de Delitos Validados (Variable Y)', fontsize=10)
+    axes[0].set_title('Regresión Lineal: PIB per Cápita vs Mortalidad Infantil', fontsize=12, fontweight='bold')
+    axes[0].set_xlabel('PIB per Cápita (int-$)', fontsize=10)
+    axes[0].set_ylabel('Tasa de Mortalidad Infantil', fontsize=10)
     axes[0].legend(loc='upper right')
 
-    # Anotaciones de municipios en el gráfico de dispersión
-    for _, row in df_frecuencia.iterrows():
-        axes[0].annotate(
-            row['municipio'],
-            (row['clave_mun'], row['total_delitos']),
-            textcoords="offset points",
-            xytext=(5, 5),
-            ha='left',
-            fontsize=8,
-            alpha=0.85
-        )
-
-    # --- GRÁFICO 2: Comparativo de Volumen por Municipio ---
-    df_sorted = df_frecuencia.sort_values(by='total_delitos', ascending=False)
+    # --- GRÁFICO 2: Top Países con Mayor Mortalidad Infantil (Diagrama de Barras) ---
+    df_top_mortality = df_recent.sort_values(by='Child mortality rate', ascending=False).head(10)
     sns.barplot(
-        data=df_sorted,
-        x='total_delitos',
-        y='municipio',
+        data=df_top_mortality,
+        x='Child mortality rate',
+        y='Entity',
         ax=axes[1],
         palette='Purples_r',
-        hue='municipio',
+        hue='Entity',
         legend=False
     )
-    axes[1].set_title('Volumen Total de Registros por Municipio', fontsize=12, fontweight='bold')
-    axes[1].set_xlabel('Número de Delitos Registrados', fontsize=10)
-    axes[1].set_ylabel('Municipio', fontsize=10)
+    axes[1].set_title('Top 10 Países con Mayor Tasa de Mortalidad Infantil', fontsize=12, fontweight='bold')
+    axes[1].set_xlabel('Tasa de Mortalidad Infantil', fontsize=10)
+    axes[1].set_ylabel('País / Entidad', fontsize=10)
 
-    for index, value in enumerate(df_sorted['total_delitos']):
-        axes[1].text(value + (value * 0.01), index, f'{value:,}', va='center', fontsize=8)
+    # Añadir valores numéricos sobre cada barra
+    for index, value in enumerate(df_top_mortality['Child mortality rate']):
+        axes[1].text(value + 1, index, f'{value:.1f}', va='center', fontsize=8)
 
     plt.tight_layout()
 
     # Guardar resultados gráficos de manera segura
-    nombre_imagen = 'reporte_seguridad_datos_limpios.png'
+    nombre_imagen = 'reporte_mortalidad_infantil_limpio.png'
     plt.savefig(nombre_imagen, dpi=300, bbox_inches='tight')
     print(f"Reporte gráfico generado y guardado exitosamente como '{nombre_imagen}'.")
 
